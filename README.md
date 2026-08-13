@@ -1,62 +1,214 @@
 # MCP Tool Orchestrator
 
-A Java 21 + Spring Boot personal portfolio project demonstrating a production-style Model Context Protocol (MCP) tool gateway.
+A Java 21 and Spring Boot backend that exposes business capabilities through the Model Context Protocol (MCP), with tenant-aware execution, rate limiting, resilience, and auditability.
 
-## Features
-- Stateless MCP Streamable HTTP server
-- `@McpTool`-based tool discovery and execution
-- Tenant-aware tool execution
-- Redis-backed per-tenant/per-tool rate limiting
-- Resilience4j circuit breaker around a downstream order service
-- PostgreSQL audit trail for tool invocations
-- Latency/outcome capture
-- Docker Compose for Redis + PostgreSQL
-- Separation between MCP adapter layer and backend orchestration services
+## Overview
+
+The MCP Tool Orchestrator acts as a backend boundary between MCP clients and business services.
+
+Instead of allowing AI clients to directly interact with individual backend services, the platform exposes controlled tools through a standardized MCP interface. Each tool invocation passes through rate limiting, orchestration, downstream service protection, and audit logging.
 
 ## Architecture
 
 ```text
-AI / MCP Client
-      |
-      | Streamable HTTP
-      v
-Spring AI MCP Server (/mcp)
-      |
-      v
-MCP Tool Layer
-      |
-      v
-Tool Orchestration
-  |       |       |
- Redis  Postgres  Resilience4j
-  |       |       |
- rate    audit   downstream
- limit   log     order service
+                 AI / MCP Client
+                       |
+                       | Streamable HTTP
+                       v
+              Spring AI MCP Server
+                       |
+                       v
+                 MCP Tool Layer
+                       |
+                       v
+              Tool Orchestration
+              /        |        \
+             /         |         \
+          Redis     PostgreSQL   Resilience4j
+            |            |            |
+       Rate Limit      Audit       Circuit
+       per Tenant      Trail       Breaker
+                                      |
+                                      v
+                              Downstream Services
 ```
 
-## Run locally
+## Key Features
 
-Prerequisites: Java 21, Maven 3.9+, Docker.
+- **MCP Server** using Spring AI and Streamable HTTP
+- **Tool discovery and execution** using `@McpTool`
+- **Tenant-aware tool execution** using tenant and client context
+- **Redis-backed rate limiting** per tenant and tool
+- **Resilience4j circuit breaker** for downstream service protection
+- **PostgreSQL audit logging** for tool invocations
+- **Latency and outcome tracking** for each invocation
+- Separation between the **MCP adapter layer** and backend orchestration services
+- Docker Compose configuration for local infrastructure
+
+## Available Tools
+
+### `get_order_status`
+
+Retrieves the status of an order from the downstream order service.
+
+```text
+get_order_status(
+    tenantId,
+    clientId,
+    orderId
+)
+```
+
+### `search_orders`
+
+Searches orders based on their current status.
+
+```text
+search_orders(
+    tenantId,
+    clientId,
+    status
+)
+```
+
+### `create_support_ticket`
+
+Creates a support ticket for a customer issue.
+
+```text
+create_support_ticket(
+    tenantId,
+    clientId,
+    issue
+)
+```
+
+## Reliability
+
+Tool invocations are protected using multiple backend mechanisms.
+
+### Rate Limiting
+
+Redis maintains per-tenant and per-tool request limits to prevent excessive or uncontrolled tool execution.
+
+```text
+tenant-a + get_order_status
+tenant-a + search_orders
+tenant-b + get_order_status
+```
+
+Each combination maintains its own rate-limit context.
+
+### Circuit Breaking
+
+Resilience4j protects calls to downstream services from repeated failures.
+
+```text
+MCP Tool
+   |
+   v
+Circuit Breaker
+   |
+   +---- Healthy ----> Downstream Service
+   |
+   +---- Failing ----> Circuit Open
+```
+
+This prevents repeated calls to an unhealthy downstream dependency.
+
+### Auditability
+
+Tool invocations are persisted in PostgreSQL with information such as:
+
+- Tenant
+- Client
+- Tool name
+- Latency
+- Execution outcome
+- Timestamp
+
+This provides visibility into tool usage and execution behaviour.
+
+## Technology Stack
+
+| Component | Technology |
+|---|---|
+| Language | Java 21 |
+| Backend | Spring Boot |
+| AI Protocol | Spring AI MCP |
+| Cache / Rate Limiting | Redis |
+| Database | PostgreSQL |
+| Resilience | Resilience4j |
+| Containerization | Docker |
+| Build Tool | Maven |
+
+## Running Locally
+
+### Prerequisites
+
+- Java 21
+- Maven 3.9+
+- Docker
+
+### Start Infrastructure
 
 ```bash
 docker compose up -d
+```
+
+This starts the required Redis and PostgreSQL services.
+
+### Start the Application
+
+```bash
 mvn spring-boot:run
 ```
 
-Health: `http://localhost:8080/api/health`
+The application starts on:
 
-MCP endpoint: `http://localhost:8080/mcp`
+```text
+http://localhost:8080
+```
 
-## Tools
+### Health Check
 
-- `get_order_status(tenantId, clientId, orderId)`
-- `search_orders(tenantId, clientId, status)`
-- `create_support_ticket(tenantId, clientId, issue)`
+```text
+http://localhost:8080/api/health
+```
 
-## Portfolio positioning
+### MCP Endpoint
 
-This project is designed to demonstrate MCP as a backend platform boundary rather than a toy AI demo: tool discovery/execution, rate limiting, tenant isolation, resilience and auditability.
+```text
+http://localhost:8080/mcp
+```
 
-## Resume note
+## Project Structure
 
-Use this as a personal project only after you have run and tested it. Do not describe it as Swiss Re production experience or add performance numbers that you have not benchmarked.
+```text
+src/
+├── main/
+│   ├── java/
+│   │   └── ...
+│   └── resources/
+│       └── application.yml
+└── test/
+    └── ...
+
+docker-compose.yml
+pom.xml
+README.md
+```
+
+## Design Goals
+
+The project focuses on treating MCP as a **backend platform boundary** rather than simply exposing a chatbot.
+
+The main engineering concerns are:
+
+- Controlled tool execution
+- Tenant isolation
+- Rate limiting
+- Downstream resilience
+- Auditability
+- Observability
+- Separation of protocol and business logic
